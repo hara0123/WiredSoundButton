@@ -44,6 +44,8 @@ char buttonStatusStr_[charBufferLen_];
 char debugStr_[charBufferLen_];
 uint32_t debugCount_;
 
+uint16_t buttonStatus_; // 上位8ビットは1フレーム前のボタンの状態
+
 // キュー
 bool buttonCheckQueue_;
 bool unitySendQueue_;
@@ -135,6 +137,8 @@ void setup() {
   {
     DrawSoundModuleStatus(true);
   }
+
+  buttonStatus_ = 0x1F; // 下位8ビットのうち5ビットを1
 
   buttonCheckQueue_ = false;
   unitySendQueue_ = false;
@@ -303,7 +307,20 @@ void DoButtonCheckProcess()
 {
   uint8_t swBit = ButtonRead();
 
+  if((buttonStatus_ & 0x1F) != (swBit & 0x1F))
+  {
+    // 変化あり
+    strncpy(messageStr_, "changed", sizeof(messageStr_));
+  }
+  else
+  {
+    strncpy(messageStr_, "------", sizeof(messageStr_));
+  }
+
   DrawButtonStatus(swBit);
+
+  buttonStatus_ <<= 8;
+  buttonStatus_ |= swBit & 0x1F;
 }
 
 // Unityへ情報を送る
