@@ -27,6 +27,7 @@
 
 // スイッチ入力をチェックするタイミング、**[ms]
 #define INPUT_CHECK_TIMING 10
+#define HEART_BEAT_COUNT 1000
 #define TIMER_RESET_COUNT 3600000UL
 
 // DFPlayerMiniでコマンドが連続するときに少し待たせる、**[ms]
@@ -47,8 +48,9 @@ char messageStr_[charBufferLen_];
 char soundModuleStatusStr_[charBufferLen_];
 char buttonStatusStr_[charBufferLen_];
 char decodeResultStr_[charBufferLen_];
+char heartBeatStr_[charBufferLen_];
 char debugStr_[charBufferLen_];
-uint32_t debugCount_;
+uint32_t heartBeat_ = 0;
 
 uint16_t buttonStatus_; // 上位8ビットは1フレーム前のボタンの状態
 
@@ -93,6 +95,7 @@ void DrawButtonStatus(uint8_t swBit);
 void DrawUnityData();
 void DrawDecodeResult();
 void DrawOtherInfo();
+void DrawHeartBeat();
 void DrawDebugData();
 
 
@@ -129,9 +132,9 @@ void setup() {
   strncpy(toUnityData, "S11111E", sizeof(toUnityData));
   fromUnityData[0] = '\0';
   decodeResultStr_[0] = '\0';
+  heartBeatStr_[0] = '\0';
   debugStr_[0] = '\0';
-  debugCount_ = 0;
-
+  
   // lovyanGFX関連
   lcd_.init();
   lcd_.setRotation(1);
@@ -199,6 +202,7 @@ void loop() {
   DrawUnityData();
   DrawDecodeResult();
   DrawOtherInfo();
+  DrawHeartBeat(); // heartBeat_はOnTimer内で操作
   DrawDebugData();
 
   canvas_.pushSprite(0, 41);
@@ -355,6 +359,11 @@ void IRAM_ATTR onTimer()
     buttonCheckQueue_ = true;
   }
 
+  if(timerCount_ % HEART_BEAT_COUNT == 0)
+  {
+    heartBeat_++; // 処理が単純なのでloop内ではなくここで直接操作
+  }
+
   timerCount_++;
   if(timerCount_ == TIMER_RESET_COUNT) // 60000で1分、3600000で1時間
   {
@@ -454,7 +463,7 @@ void DrawButtonStatus(uint8_t swBit)
 
   canvas_.setFont(&fonts::Font4);
   canvas_.setTextColor(TFT_WHITE, bgColor_);
-  canvas_.drawString(buttonStatusStr_, 0, 10);
+  canvas_.drawString(buttonStatusStr_, 0, 5);
 
   if(buttonPressedNo != -1)
   {
@@ -463,7 +472,7 @@ void DrawButtonStatus(uint8_t swBit)
     char c[2];
     c[0] = buttonPressedNo + '0' + 1; // 表示上のボタン番号は1オリジンにした
     c[1] = '\0';
-    canvas_.drawString(c, 240, 10);
+    canvas_.drawString(c, 240, 5);
   }
 }
 
@@ -471,20 +480,28 @@ void DrawUnityData()
 {
   canvas_.setFont(&fonts::Font4);
   canvas_.setTextColor(TFT_WHITE, bgColor_);
-  canvas_.drawString("SND:", 0, 40);
-  canvas_.drawString(toUnityData, 64, 40);
-  canvas_.drawString("RCV:", 0, 70);
-  canvas_.drawString(fromUnityData, 64, 70);
+  canvas_.drawString("SND:", 0, 35);
+  canvas_.drawString(toUnityData, 64, 35);
+  canvas_.drawString("RCV:", 0, 65);
+  canvas_.drawString(fromUnityData, 64, 65);
 }
 
 void DrawDecodeResult()
 {
-  canvas_.drawString(decodeResultStr_, 0, 100);
+  canvas_.drawString(decodeResultStr_, 0, 95);
 }
 
 void DrawOtherInfo()
 {
-  canvas_.drawString(messageStr_, 0, 140);
+  canvas_.drawString(messageStr_, 0, 125);
+}
+
+void DrawHeartBeat()
+{
+  canvas_.setFont(&fonts::Font0);
+  canvas_.setTextColor(TFT_WHITE, bgColor_);
+  sprintf(heartBeatStr_, "%lu", heartBeat_); // heartBeatStr_はOnTimerで値を操作していて文字列に変換するちょうどよいタイミングがなく、ここで変換
+  canvas_.drawString(heartBeatStr_, 260, 155);
 }
 
 void DrawDebugData()
