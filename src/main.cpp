@@ -25,9 +25,12 @@
 
 #define SOUND_BUSY_PIN G5
 
-// スイッチ入力をチェックするタイミング
-#define INPUT_CHECK_TIMING 10 // **[ms]
+// スイッチ入力をチェックするタイミング、**[ms]
+#define INPUT_CHECK_TIMING 10
 #define TIMER_RESET_COUNT 3600000UL
+
+// DFPlayerMiniでコマンドが連続するときに少し待たせる、**[ms]
+#define DFPLAYER_COMMAND_WAIT_TIME 20
 
 
 // 以下、グローバル変数
@@ -50,12 +53,12 @@ uint32_t debugCount_;
 uint16_t buttonStatus_; // 上位8ビットは1フレーム前のボタンの状態
 
 // キュー
-bool buttonCheckQueue_;
-bool unitySendQueue_;
+volatile bool buttonCheckQueue_;
+volatile bool unitySendQueue_;
 
 // タイマー
 hw_timer_t* timer_ = nullptr;
-uint32_t timerCount_ = 0;
+volatile uint32_t timerCount_ = 0;
 
 // マイコンからUnityへ送るデータ
 const int toUnityDataLen_ = 8; // 'S' + スイッチ5個 + 'E' + '\0'
@@ -140,6 +143,9 @@ void setup() {
   lcd_.fillRect(0, 41, 320, 165, bgColor_);
   lcd_.drawLine(0, 206, 320, 206, TFT_YELLOW);
 
+  canvas_.createSprite(320, 165);
+  canvas_.fillScreen(bgColor_);
+
   DrawLOGO();
 
   // DFPlayerMini関連
@@ -168,10 +174,14 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   // 先にUnityからの受信を処理
+  //if(Serial.available() >= 9 && Serial.peek() == 'b')
   if(Serial.available() > 0)
   {
     CommandDecode();
   }
+
+  // ボタンの状態確認内でDraw関数を呼ぶので、スプライトの消去はボタンの状態確認の前に行う
+  canvas_.fillScreen(bgColor_);
 
   // ボタンの状態確認
   if(buttonCheckQueue_)
@@ -190,6 +200,8 @@ void loop() {
   DrawDecodeResult();
   DrawOtherInfo();
   DrawDebugData();
+
+  canvas_.pushSprite(0, 41);
 }
 
 void SpeakerSelect(uint8_t n)
@@ -229,8 +241,10 @@ void PlaySound(uint8_t folderNo, uint8_t fileNo, uint8_t vol)
   {
     // 再生中、強制停止
     dfplayer_.stop();
+    delay(DFPLAYER_COMMAND_WAIT_TIME);
   }
   dfplayer_.volume(vol);
+  delay(DFPLAYER_COMMAND_WAIT_TIME);
   dfplayer_.playFolder(folderNo, fileNo);
 }
 
@@ -357,7 +371,7 @@ void DoButtonCheckProcess()
   bool changeFlag = false;
 
   // ボタン4が上位ビット、ボタン0がLSB
-  // ボタンの押下を確認しつつUnityに送るデータを作成、作成はするが変化がなければ送信フラグは立てない
+  // ボタンの押下を確認しつつUnityに送るデータを作成、作成はするが変化がなければ送信フラグは立てない → 立てることにした
   // Unityに送るデータはボタン0→4の並び
   for(int i = 0; i < DEVICE_MAX; i++)
   {
@@ -377,13 +391,14 @@ void DoButtonCheckProcess()
   {
     // 変化あり
     strncpy(messageStr_, "button was pressed.", sizeof(messageStr_));
-    unitySendQueue_ = true;
+    // unitySendQueue_ = true;
   }
   else
   {
     messageStr_[0] = '\0';
   }
 
+  unitySendQueue_ = true; // 変化がない場合でもUnityには送る
   DrawButtonStatus(swBit);
 
   buttonStatus_ <<= 8;
@@ -438,40 +453,39 @@ void DrawButtonStatus(uint8_t swBit)
   }
   *ptr = '\0';
 
-  lcd_.setFont(&fonts::Font4);
-  lcd_.setTextColor(TFT_WHITE, bgColor_);
-  lcd_.drawString(buttonStatusStr_, 0, 50);
+  canvas_.setFont(&fonts::Font4);
+  canvas_.setTextColor(TFT_WHITE, bgColor_);
+  canvas_.drawString(buttonStatusStr_, 0, 10);
 
   if(buttonPressedNo != -1)
   {
-    lcd_.setFont(&fonts::Font8);
-    lcd_.setTextColor(TFT_WHITE, bgColor_);
+    canvas_.setFont(&fonts::Font8);
+    canvas_.setTextColor(TFT_WHITE, bgColor_);
     char c[2];
     c[0] = buttonPressedNo + '0' + 1; // 表示上のボタン番号は1オリジンにした
     c[1] = '\0';
-    lcd_.drawString(c, 240, 50);
+    canvas_.drawString(c, 240, 10);
   }
 }
 
 void DrawUnityData()
 {
-  lcd_.setFont(&fonts::Font4);
-  lcd_.setTextColor(TFT_WHITE, bgColor_);
-  lcd_.drawString("SND:", 0, 80);
-  lcd_.drawString(toUnityData, 64, 80);
-  lcd_.drawString("RCV:", 0, 110);
-  lcd_.drawString(fromUnityData, 64, 110);
+  canvas_.setFont(&fonts::Font4);
+  canvas_.setTextColor(TFT_WHITE, bgColor_);
+  canvas_.drawString("SND:", 0, 40);
+  canvas_.drawString(toUnityData, 64, 40);
+  canvas_.drawString("RCV:", 0, 70);
+  canvas_.drawString(fromUnityData, 64, 70);
 }
 
 void DrawDecodeResult()
 {
-  lcd_.drawString(decodeResultStr_, 0, 140);
+  canvas_.drawString(decodeResultStr_, 0, 100);
 }
 
 void DrawOtherInfo()
 {
-  lcd_.fillRect(0, 180, 320, 25, bgColor_);
-  lcd_.drawString(messageStr_, 0, 180);
+  canvas_.drawString(messageStr_, 0, 140);
 }
 
 void DrawDebugData()
