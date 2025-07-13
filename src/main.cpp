@@ -320,8 +320,7 @@ void CommandDecode()
       else if(strcmp(fromUnityData, "b99999999") == 0)
       {
         strncpy(debugStr_, "b99999999                 ", sizeof(messageStr_));
-        SpeakerSelect(1);
-        PlaySound(2,2,22);
+        esp_restart();
       }
     }  
 }
