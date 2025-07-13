@@ -2,9 +2,11 @@
 #include <M5Stack.h>
 
 #include <LovyanGFX.hpp>
-#include <LGFX_AUTODETECT.hpp>  // クラス"LGFX"を準備します
+#include <LGFX_AUTODETECT.hpp>
 
 #include "DFRobotDFPlayerMini.h"
+
+#include "KOGEI16_b.h"
 
 // DEVICE_MAXは接続されたデバイス数ではなくシステムの最大値
 #define DEVICE_MAX 5
@@ -76,6 +78,7 @@ void DoButtonCheckProcess();
 void DoUnitySendProcess();
 
 // 表示系関数
+void DrawLOGO();
 void DrawSoundModuleStatus(bool status);
 void DrawButtonStatus(uint8_t swBit);
 void DrawUnityData();
@@ -124,7 +127,12 @@ void setup() {
   lcd_.setRotation(1);
   lcd_.setBrightness(128);
   lcd_.setColorDepth(16);  // RGB565
-  lcd_.setFont(&fonts::lgfxJapanGothic_20);
+  lcd_.drawLine(0, 0, 320, 0, TFT_YELLOW);
+  lcd_.fillRect(0, 1, 320, 39, TFT_BLACK);
+  lcd_.drawLine(0, 40, 320, 40, TFT_YELLOW);
+  lcd_.fillRect(0, 41, 320, 200, TFT_NAVY);
+
+  DrawLOGO();
 
   // DFPlayerMini関連
   pinMode(SOUND_BUSY_PIN, INPUT);
@@ -172,7 +180,7 @@ void loop() {
     DoUnitySendProcess();
   }
 
-  DrawUnityData(); // 毎フレーム描画
+  DrawUnityData();
   DrawOtherInfo();
   DrawDebugData();
 }
@@ -198,6 +206,7 @@ uint8_t ButtonRead()
 {
   uint8_t swBit = 0;
 
+  // ボタン4が上位ビット、ボタン0がLSB
   for(int i = DEVICE_MAX -1; i >= 0; i--)
   {
     swBit |= (digitalRead(swPin_[i])) << i;
@@ -237,7 +246,7 @@ void CommandDecode()
       *ptr = tmp[0];
       ptr++;
 
-      // フォルダ番号、2桁など自力でデコードしてやる
+      // フォルダ番号、2桁
       tmp[1] = Serial.read();
       tmp[0] = Serial.read();
       int folderNum = (tmp[1] - '0') * 10 + (tmp[0] - '0');
@@ -246,7 +255,7 @@ void CommandDecode()
       *ptr = tmp[0];
       ptr++;
       
-      // ファイル番号、3桁など自力でデコードしてやる
+      // ファイル番号、3桁
       tmp[2] = Serial.read();
       tmp[1] = Serial.read();
       tmp[0] = Serial.read();
@@ -258,7 +267,7 @@ void CommandDecode()
       *ptr = tmp[0];
       ptr++;
 
-      // ボリューム、2桁など自力でデコードしてやる
+      // ボリューム、2桁
       tmp[1] = Serial.read();
       tmp[0] = Serial.read();
       int vol = (tmp[1] - '0') * 10 + (tmp[0] - '0');
@@ -307,7 +316,25 @@ void DoButtonCheckProcess()
 {
   uint8_t swBit = ButtonRead();
 
-  if((buttonStatus_ & 0x1F) != (swBit & 0x1F))
+  bool changeFlag = false;
+
+  // ボタン4が上位ビット、ボタン0がLSB
+  // 確認しつつUnityに送るデータを作成、作成はするが変化がなければ送信フラグは立てない
+  for(int i = 0; i < DEVICE_MAX; i++)
+  {
+    if((buttonStatus_ >> i) & 0x1 && (swBit >> i) & 0x1 == 0)
+    {
+      // 押した瞬間
+      changeFlag = true;
+      toUnityData[1 + (DEVICE_MAX - 1 - i)] = '0'; // 冒頭の1+は'S'
+    }
+    else
+    {
+      toUnityData[1 + (DEVICE_MAX - 1 - i)] = '1'; // 冒頭の1+は'S'
+    }
+  }
+
+  if(changeFlag)
   {
     // 変化あり
     strncpy(messageStr_, "changed", sizeof(messageStr_));
@@ -329,20 +356,38 @@ void DoUnitySendProcess()
   Serial.println(toUnityData);
 }
 
+void DrawLOGO()
+{
+  lcd_.setSwapBytes(true);
+  lcd_.pushImage(0, 4, 48, 32, (uint16_t*)logoData);
+}
+
 void DrawSoundModuleStatus(bool status)
 {
-  lcd_.fillRect(0, 0, 20, 20, (uint8_t)0xE0);  // 赤で矩形の塗りを描画
-  lcd_.fillRect(10, 10, 20, 20, (uint8_t)0x1C);  // 緑で矩形の塗りを描画
+//  lcd_.fillRect(0, 3, 20, 20, (uint8_t)0xE0);  // 赤で矩形の塗りを描画
+//  lcd_.fillRect(10, 13, 20, 20, (uint8_t)0x1C);  // 緑で矩形の塗りを描画
 
   if(status)
   {
-    strncpy(soundModuleStatusStr_, "Sound Module Online.", sizeof(soundModuleStatusStr_));
+    strncpy(soundModuleStatusStr_, "Sound Module OK", sizeof(soundModuleStatusStr_));
   }
   else
   {
-    strncpy(soundModuleStatusStr_, "Sound Module unable to begin.", sizeof(soundModuleStatusStr_));
+    strncpy(soundModuleStatusStr_, "Sound Module NG", sizeof(soundModuleStatusStr_));
   }
-  lcd_.drawString(soundModuleStatusStr_, 40, 0);
+
+  lcd_.setFont(&fonts::Font4);
+  //lcd_.drawString(soundModuleStatusStr_, 40, 0);
+  lcd_.drawString("Sound Module", 56, 14);
+  lcd_.setFont(&fonts::FreeSans18pt7b);
+  if(status)
+  {
+    lcd_.drawString("OK", 240, 5);
+  }
+  else
+  {
+    lcd_.drawString("NG", 240, 5);
+  }
 }
 
 void DrawButtonStatus(uint8_t swBit)
@@ -358,13 +403,20 @@ void DrawButtonStatus(uint8_t swBit)
   }
   *ptr = '\0';
 
+  lcd_.setFont(&fonts::Font4);
   lcd_.drawString(buttonStatusStr_, 0, 50);
+
+  lcd_.setFont(&fonts::Font8);
+  lcd_.drawString("3", 240, 50);
 }
 
 void DrawUnityData()
 {
-  lcd_.drawString(toUnityData, 0, 90);
-  lcd_.drawString(fromUnityData, 0, 120);
+  lcd_.setFont(&fonts::Font4);
+  lcd_.drawString("SND:", 0, 80);
+  lcd_.drawString(toUnityData, 64, 80);
+  lcd_.drawString("RCV:", 0, 110);
+  lcd_.drawString(fromUnityData, 64, 110);
 }
 
 void DrawOtherInfo()
