@@ -11,11 +11,11 @@
 // DEVICE_MAXは接続されたデバイス数ではなくシステムの最大値
 #define DEVICE_MAX 5
 
-#define SW1_PIN G34
-#define SW2_PIN G35
+#define SW1_PIN G13
+#define SW2_PIN G0
 #define SW3_PIN G36
-#define SW4_PIN G0
-#define SW5_PIN G13
+#define SW4_PIN G35
+#define SW5_PIN G34
 
 #define RELAY1_PIN G22
 #define RELAY2_PIN G21
@@ -54,16 +54,20 @@ bool buttonCheckQueue_;
 bool unitySendQueue_;
 
 // タイマー
-hw_timer_t* timer = nullptr;
-uint32_t timerCount = 0;
+hw_timer_t* timer_ = nullptr;
+uint32_t timerCount_ = 0;
 
 // マイコンからUnityへ送るデータ
-const int toUnityDataLen = 8; // 'S' + スイッチ5個 + 'E' + '\0'
-char toUnityData[toUnityDataLen]; // スイッチ5個、例えばS11010Eが送られる
+const int toUnityDataLen_ = 8; // 'S' + スイッチ5個 + 'E' + '\0'
+char toUnityData[toUnityDataLen_]; // スイッチ5個、例えばS11010Eが送られる
 
 // Unityから送られるデータ
-const int fromUnityDataLen = 50; // ひとまずダミー
-char fromUnityData[fromUnityDataLen];
+const int fromUnityDataLen_ = 50; // ひとまずダミー
+char fromUnityData[fromUnityDataLen_];
+
+// 背景色
+const int bgColor_ = TFT_DARKGREEN;
+
 
 // 以下、プロトタイプ宣言
 void IRAM_ATTR onTimer();
@@ -73,6 +77,7 @@ uint8_t ButtonRead();
 void PlaySound(uint8_t folderNo, uint8_t fileNo, uint8_t vol);
 
 void CommandDecode();
+bool CommandCheck(uint8_t spNo, uint8_t folderNo, uint8_t fileNo, uint8_t vol);
 
 // キュー処理関数
 void DoButtonCheckProcess();
@@ -120,7 +125,6 @@ void setup() {
 
   strncpy(toUnityData, "S11111E", sizeof(toUnityData));
   fromUnityData[0] = '\0';
-  //strncpy(fromUnityData, "aaa", sizeof(fromUnityData)); // デバッグ中はダミーデータを用意
   decodeResultStr_[0] = '\0';
   debugStr_[0] = '\0';
   debugCount_ = 0;
@@ -133,7 +137,8 @@ void setup() {
   lcd_.drawLine(0, 0, 320, 0, TFT_YELLOW);
   lcd_.fillRect(0, 1, 320, 39, TFT_BLACK);
   lcd_.drawLine(0, 40, 320, 40, TFT_YELLOW);
-  lcd_.fillRect(0, 41, 320, 200, TFT_NAVY);
+  lcd_.fillRect(0, 41, 320, 165, bgColor_);
+  lcd_.drawLine(0, 206, 320, 206, TFT_YELLOW);
 
   DrawLOGO();
 
@@ -154,10 +159,10 @@ void setup() {
   buttonCheckQueue_ = false;
   unitySendQueue_ = false;
 
-  timer = timerBegin(0, getApbFrequency() / 1000000, true); // 1usでカウントアップ
-  timerAttachInterrupt(timer, &onTimer, true);
-  timerAlarmWrite(timer, 1000, true);  // 1000us=1msごとにonTimer関数が呼ばれる
-  timerAlarmEnable(timer);
+  timer_ = timerBegin(0, getApbFrequency() / 1000000, true); // 1usでカウントアップ
+  timerAttachInterrupt(timer_, &onTimer, true);
+  timerAlarmWrite(timer_, 1000, true);  // 1000us=1msごとにonTimer関数が呼ばれる
+  timerAlarmEnable(timer_);
 }
 
 void loop() {
@@ -165,8 +170,6 @@ void loop() {
   // 先にUnityからの受信を処理
   if(Serial.available() > 0)
   {
-    sprintf(debugStr_, "received, %d", debugCount_);
-    debugCount_++;
     CommandDecode();
   }
 
@@ -280,38 +283,69 @@ void CommandDecode()
       *ptr = tmp[0];
       ptr++;
 
+      snprintf(decodeResultStr_, sizeof(decodeResultStr_), " => sp:%d dir:%d file:%d vol:%d", id, folderNum, fileNum, vol);
+
+      if(CommandCheck(id, folderNum, fileNum, vol))
+      {
+        SpeakerSelect(id); // idは0オリジン
+        PlaySound(folderNum, fileNum, vol);
+        debugStr_[0] = '\0';
+      }
+      else
+      {
+        strncpy(debugStr_, "unable to decode          ", sizeof(debugStr_));
+      }
+
+      // デバッグ用裏コマンド
       if(strcmp(fromUnityData, "b12345678") == 0)
       {
-        strncpy(messageStr_, "itti", sizeof(messageStr_));
+        strncpy(debugStr_, "b12345678                 ", sizeof(messageStr_));
         SpeakerSelect(0);
         PlaySound(1,1,15);
       }
       else if(strcmp(fromUnityData, "b99999999") == 0)
       {
-        strncpy(messageStr_, "itti", sizeof(messageStr_));
+        strncpy(debugStr_, "b99999999                 ", sizeof(messageStr_));
         SpeakerSelect(1);
-        PlaySound(1,1,15);
+        PlaySound(2,2,22);
       }
-      else
-      {
-        strncpy(messageStr_, "xxxxx", sizeof(messageStr_));
-      }
-
-      snprintf(messageStr_, sizeof(messageStr_), "%d %d %d %d", id, folderNum, fileNum, vol);
     }  
+}
+
+bool CommandCheck(uint8_t spNo, uint8_t folderNo, uint8_t fileNo, uint8_t vol)
+{
+  // 引数はいずれも符号なしなので、負数はチェックしない
+  if(spNo >= DEVICE_MAX)
+  {
+    return false;
+  }
+
+  if(folderNo > 99)
+  {
+    return false;
+  }
+
+  // fileNoはuint8_tの範囲なら再生可能なのでノーチェック
+
+  if(vol > 30) // 実際はボリューム31は再生可能かもしれない
+  {
+    return false;
+  }
+
+  return true;
 }
 
 void IRAM_ATTR onTimer()
 {
-  if(timerCount % INPUT_CHECK_TIMING == 0)
+  if(timerCount_ % INPUT_CHECK_TIMING == 0)
   {
     buttonCheckQueue_ = true;
   }
 
-  timerCount++;
-  if(timerCount == TIMER_RESET_COUNT) // 60000で1分、3600000で1時間
+  timerCount_++;
+  if(timerCount_ == TIMER_RESET_COUNT) // 60000で1分、3600000で1時間
   {
-    timerCount = 0;
+    timerCount_ = 0;
   }
 }
 
@@ -323,30 +357,31 @@ void DoButtonCheckProcess()
   bool changeFlag = false;
 
   // ボタン4が上位ビット、ボタン0がLSB
-  // 確認しつつUnityに送るデータを作成、作成はするが変化がなければ送信フラグは立てない
+  // ボタンの押下を確認しつつUnityに送るデータを作成、作成はするが変化がなければ送信フラグは立てない
+  // Unityに送るデータはボタン0→4の並び
   for(int i = 0; i < DEVICE_MAX; i++)
   {
     if(buttonStatus_ >> i & 0x1 && (swBit >> i & 0x1) == 0)
     {
       // 押した瞬間
       changeFlag = true;
-      toUnityData[1 + (DEVICE_MAX - 1 - i)] = '0'; // 冒頭の1+は'S'
+      toUnityData[1 + i] = '0'; // 冒頭の1+は'S'
     }
     else
     {
-      toUnityData[1 + (DEVICE_MAX - 1 - i)] = '1'; // 冒頭の1+は'S'
+      toUnityData[1 + i] = '1'; // 冒頭の1+は'S'
     }
   }
 
   if(changeFlag)
   {
     // 変化あり
-    strncpy(messageStr_, "changed", sizeof(messageStr_));
+    strncpy(messageStr_, "button was pressed.", sizeof(messageStr_));
     unitySendQueue_ = true;
   }
   else
   {
-    strncpy(messageStr_, "------", sizeof(messageStr_));
+    messageStr_[0] = '\0';
   }
 
   DrawButtonStatus(swBit);
@@ -369,18 +404,8 @@ void DrawLOGO()
 
 void DrawSoundModuleStatus(bool status)
 {
-  /*
-  if(status)
-  {
-    strncpy(soundModuleStatusStr_, "Sound Module OK", sizeof(soundModuleStatusStr_));
-  }
-  else
-  {
-    strncpy(soundModuleStatusStr_, "Sound Module NG", sizeof(soundModuleStatusStr_));
-  }
-  */
-
   lcd_.setFont(&fonts::Font4);
+  lcd_.setTextColor(TFT_WHITE, TFT_BLACK);
   lcd_.drawString("Sound Module", 56, 14);
   lcd_.setFont(&fonts::FreeSans18pt7b);
   if(status)
@@ -400,7 +425,9 @@ void DrawButtonStatus(uint8_t swBit)
 
   int buttonPressedNo = -1;
   char* ptr = buttonStatusStr_ + sizeof(label) - 1;
-  for(int i = 0; i < DEVICE_MAX; i++)
+
+  // 上位ビットから書く
+  for(int i = DEVICE_MAX - 1; i >= 0; i--)
   {
     *ptr = (swBit >> i & 0x1) + '0';
     ptr++;
@@ -412,13 +439,15 @@ void DrawButtonStatus(uint8_t swBit)
   *ptr = '\0';
 
   lcd_.setFont(&fonts::Font4);
+  lcd_.setTextColor(TFT_WHITE, bgColor_);
   lcd_.drawString(buttonStatusStr_, 0, 50);
 
   if(buttonPressedNo != -1)
   {
     lcd_.setFont(&fonts::Font8);
+    lcd_.setTextColor(TFT_WHITE, bgColor_);
     char c[2];
-    c[0] = buttonPressedNo + '0';
+    c[0] = buttonPressedNo + '0' + 1; // 表示上のボタン番号は1オリジンにした
     c[1] = '\0';
     lcd_.drawString(c, 240, 50);
   }
@@ -427,6 +456,7 @@ void DrawButtonStatus(uint8_t swBit)
 void DrawUnityData()
 {
   lcd_.setFont(&fonts::Font4);
+  lcd_.setTextColor(TFT_WHITE, bgColor_);
   lcd_.drawString("SND:", 0, 80);
   lcd_.drawString(toUnityData, 64, 80);
   lcd_.drawString("RCV:", 0, 110);
@@ -435,15 +465,18 @@ void DrawUnityData()
 
 void DrawDecodeResult()
 {
-
+  lcd_.drawString(decodeResultStr_, 0, 140);
 }
 
 void DrawOtherInfo()
 {
-  lcd_.drawString(messageStr_, 0, 160);
+  lcd_.fillRect(0, 180, 320, 25, bgColor_);
+  lcd_.drawString(messageStr_, 0, 180);
 }
 
 void DrawDebugData()
 {
-  lcd_.drawString(debugStr_, 0, 200);
+  lcd_.setFont(&fonts::FreeMonoOblique12pt7b);
+  lcd_.setTextColor(TFT_WHITE, TFT_BLACK);
+  lcd_.drawString(debugStr_, 0, 212);
 }
