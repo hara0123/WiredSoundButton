@@ -43,6 +43,7 @@ const int charBufferLen_ = 60;
 char messageStr_[charBufferLen_];
 char soundModuleStatusStr_[charBufferLen_];
 char buttonStatusStr_[charBufferLen_];
+char decodeResultStr_[charBufferLen_];
 char debugStr_[charBufferLen_];
 uint32_t debugCount_;
 
@@ -82,6 +83,7 @@ void DrawLOGO();
 void DrawSoundModuleStatus(bool status);
 void DrawButtonStatus(uint8_t swBit);
 void DrawUnityData();
+void DrawDecodeResult();
 void DrawOtherInfo();
 void DrawDebugData();
 
@@ -119,6 +121,7 @@ void setup() {
   strncpy(toUnityData, "S11111E", sizeof(toUnityData));
   fromUnityData[0] = '\0';
   //strncpy(fromUnityData, "aaa", sizeof(fromUnityData)); // デバッグ中はダミーデータを用意
+  decodeResultStr_[0] = '\0';
   debugStr_[0] = '\0';
   debugCount_ = 0;
 
@@ -181,6 +184,7 @@ void loop() {
   }
 
   DrawUnityData();
+  DrawDecodeResult();
   DrawOtherInfo();
   DrawDebugData();
 }
@@ -322,7 +326,7 @@ void DoButtonCheckProcess()
   // 確認しつつUnityに送るデータを作成、作成はするが変化がなければ送信フラグは立てない
   for(int i = 0; i < DEVICE_MAX; i++)
   {
-    if((buttonStatus_ >> i) & 0x1 && (swBit >> i) & 0x1 == 0)
+    if(buttonStatus_ >> i & 0x1 && (swBit >> i & 0x1) == 0)
     {
       // 押した瞬間
       changeFlag = true;
@@ -338,6 +342,7 @@ void DoButtonCheckProcess()
   {
     // 変化あり
     strncpy(messageStr_, "changed", sizeof(messageStr_));
+    unitySendQueue_ = true;
   }
   else
   {
@@ -364,9 +369,7 @@ void DrawLOGO()
 
 void DrawSoundModuleStatus(bool status)
 {
-//  lcd_.fillRect(0, 3, 20, 20, (uint8_t)0xE0);  // 赤で矩形の塗りを描画
-//  lcd_.fillRect(10, 13, 20, 20, (uint8_t)0x1C);  // 緑で矩形の塗りを描画
-
+  /*
   if(status)
   {
     strncpy(soundModuleStatusStr_, "Sound Module OK", sizeof(soundModuleStatusStr_));
@@ -375,9 +378,9 @@ void DrawSoundModuleStatus(bool status)
   {
     strncpy(soundModuleStatusStr_, "Sound Module NG", sizeof(soundModuleStatusStr_));
   }
+  */
 
   lcd_.setFont(&fonts::Font4);
-  //lcd_.drawString(soundModuleStatusStr_, 40, 0);
   lcd_.drawString("Sound Module", 56, 14);
   lcd_.setFont(&fonts::FreeSans18pt7b);
   if(status)
@@ -395,19 +398,30 @@ void DrawButtonStatus(uint8_t swBit)
   const char label[] = "Button: ";
   strncpy(buttonStatusStr_, label, sizeof(buttonStatusStr_));
 
+  int buttonPressedNo = -1;
   char* ptr = buttonStatusStr_ + sizeof(label) - 1;
   for(int i = 0; i < DEVICE_MAX; i++)
   {
-    *ptr = ((swBit >> i) & 0x1) + '0';
+    *ptr = (swBit >> i & 0x1) + '0';
     ptr++;
+    if((swBit >> i & 0x1) == 0)
+    {
+      buttonPressedNo = i;
+    }
   }
   *ptr = '\0';
 
   lcd_.setFont(&fonts::Font4);
   lcd_.drawString(buttonStatusStr_, 0, 50);
 
-  lcd_.setFont(&fonts::Font8);
-  lcd_.drawString("3", 240, 50);
+  if(buttonPressedNo != -1)
+  {
+    lcd_.setFont(&fonts::Font8);
+    char c[2];
+    c[0] = buttonPressedNo + '0';
+    c[1] = '\0';
+    lcd_.drawString(c, 240, 50);
+  }
 }
 
 void DrawUnityData()
@@ -417,6 +431,11 @@ void DrawUnityData()
   lcd_.drawString(toUnityData, 64, 80);
   lcd_.drawString("RCV:", 0, 110);
   lcd_.drawString(fromUnityData, 64, 110);
+}
+
+void DrawDecodeResult()
+{
+
 }
 
 void DrawOtherInfo()
