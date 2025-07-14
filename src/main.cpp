@@ -77,7 +77,7 @@ const int bgColor_ = TFT_DARKGREEN;
 // 以下、プロトタイプ宣言
 void IRAM_ATTR onTimer();
 
-void SpeakerSelect(uint8_t n);
+void SpeakerSelect(int n);
 uint8_t ButtonRead();
 void PlaySound(uint8_t folderNo, uint8_t fileNo, uint8_t vol);
 
@@ -208,10 +208,19 @@ void loop() {
   canvas_.pushSprite(0, 41);
 }
 
-void SpeakerSelect(uint8_t n)
+void SpeakerSelect(int n)
 {
   if(n >= DEVICE_MAX)
     return;
+
+  if(n == -1)
+  {
+    // 全ミュート、コードとして独立させた方が意外と見やすい
+    for(uint8_t i = 0; i < DEVICE_MAX; i++ )
+    {
+      digitalWrite(relayPin_[i], LOW);
+    }
+  }
 
   for(uint8_t i = 0; i < DEVICE_MAX; i++ )
   {
@@ -324,6 +333,7 @@ void CommandDecode()
       else if(strcmp(fromUnityData, "b99999999") == 0)
       {
         strncpy(debugStr_, "b99999999                 ", sizeof(messageStr_));
+        SpeakerSelect(-1); // 全ミュート
         esp_restart();
       }
     }  
